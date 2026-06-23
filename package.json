@@ -1,6 +1,6 @@
 {
   "name": "crisp-voting-plugin",
-  "description": "A voting plugin for the OSX stack using CRISP on Enclave",
+  "description": "A voting plugin for the OSX stack using CRISP on Interfold",
   "version": "1.0.0",
   "author": {
     "name": "Gnosis Guild",
@@ -42,7 +42,7 @@
     "@ensdomains/ens-contracts": "0.0.11",
     "@openzeppelin/contracts": "4.9.6",
     "@openzeppelin/contracts-upgradeable": "4.9.6",
-    "@enclave-e3/contracts": "0.0.10-test",
+    "@interfold/contracts": "0.2.2",
     "@aragon/token-voting-plugin": "github:aragon/token-voting-plugin#v1.3",
     "solady": "^0.1.19"
   }

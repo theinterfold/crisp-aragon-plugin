@@ -10,7 +10,7 @@ import {DAO} from "@aragon/osx/core/dao/DAO.sol";
 import {DaoUnauthorized} from "@aragon/osx-commons-contracts/src/permission/auth/auth.sol";
 import {CrispVoting} from "../../src/CrispVoting.sol";
 import {IERC20Mint} from "../../src/IERC20Mint.sol";
-import {IEnclave} from "../../src/IEnclave.sol";
+import {IInterfold} from "../../src/IInterfold.sol";
 
 contract MyPluginTestFork is TestBase {
     DAO dao;
@@ -18,8 +18,8 @@ contract MyPluginTestFork is TestBase {
 
     /// @notice these are the addresses when deploying on a local hardhat network
     address crispProgramAddress = 0x0b75A4d93c686103a903091a91C869aD9ad9CB7B;
-    address enclaveAddress = 0x95bC90fcb37684bfbAA3ffA2CbF4067fA404c4AA;
-    address enclaveFeeToken = 0x80C5504A6704359C40B88777b1639096d3453804;
+    address interfoldAddress = 0x95bC90fcb37684bfbAA3ffA2CbF4067fA404c4AA;
+    address interfoldFeeToken = 0x80C5504A6704359C40B88777b1639096d3453804;
 
     bytes computeProviderParams =
         "0x7b226e616d65223a225249534330222c22706172616c6c656c223a66616c73652c2262617463685f73697a65223a347d";
@@ -27,8 +27,8 @@ contract MyPluginTestFork is TestBase {
     ICrispVoting.PluginInitParams pluginInitParams = ICrispVoting.PluginInitParams({
         dao: dao,
         token: address(0),
-        enclave: enclaveAddress,
-        committeeSize: IEnclave.CommitteeSize(0),
+        interfold: interfoldAddress,
+        committeeSize: IInterfold.CommitteeSize(0),
         crispProgramAddress: crispProgramAddress,
         paramSet: 0,
         computeProviderParams: computeProviderParams,
@@ -46,8 +46,8 @@ contract MyPluginTestFork is TestBase {
         // Make alice the msg.sender for the next call
         vm.startPrank(alice);
 
-        IERC20Mint(enclaveFeeToken).mint(alice, 10e6);
-        IERC20Mint(enclaveFeeToken).approve(address(plugin), 10e6);
+        IERC20Mint(interfoldFeeToken).mint(alice, 10e6);
+        IERC20Mint(interfoldFeeToken).approve(address(plugin), 10e6);
 
         // It Should create a new E3 request
         plugin.createProposal(
