@@ -10,7 +10,7 @@ import {DAO} from "@aragon/osx/core/dao/DAO.sol";
 import {DaoUnauthorized} from "@aragon/osx-commons-contracts/src/permission/auth/auth.sol";
 import {CrispVoting} from "../src/CrispVoting.sol";
 import {console} from "forge-std/console.sol";
-import {IEnclave} from "../src/IEnclave.sol";
+import {IInterfold} from "../src/IInterfold.sol";
 
 contract MyPluginTest is TestBase {
     DAO dao;
@@ -18,7 +18,7 @@ contract MyPluginTest is TestBase {
 
     /// @notice these are the addresses when deploying on a local hardhat network
     address crispProgramAddress = 0x67d269191c92Caf3cD7723F116c85e6E9bf55933;
-    address enclaveAddress = 0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0;
+    address interfoldAddress = 0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0;
 
     bytes computeProviderParams =
         "0x7b226e616d65223a225249534330222c22706172616c6c656c223a66616c73652c2262617463685f73697a65223a347d";
@@ -26,8 +26,8 @@ contract MyPluginTest is TestBase {
     ICrispVoting.PluginInitParams pluginInitParams = ICrispVoting.PluginInitParams({
         dao: dao,
         token: address(0),
-        enclave: enclaveAddress,
-        committeeSize: IEnclave.CommitteeSize(0),
+        interfold: interfoldAddress,
+        committeeSize: IInterfold.CommitteeSize(0),
         crispProgramAddress: crispProgramAddress,
         paramSet: 0,
         computeProviderParams: computeProviderParams,

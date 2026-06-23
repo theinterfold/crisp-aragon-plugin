@@ -7,5 +7,5 @@ forge-std/=lib/forge-std/src/
 @ensdomains/ens-contracts/=lib/ens-contracts/
 @ensdomains/buffer/=lib/buffer
 
-@enclave-e3/contracts=node_modules/@enclave-e3/contracts 
+@interfold-e3/contracts=node_modules/@interfold-e3/contracts 
 @aragon/token-voting-plugin/=node_modules/@aragon/token-voting-plugin/src/

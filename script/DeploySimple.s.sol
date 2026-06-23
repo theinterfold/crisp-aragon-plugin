@@ -122,7 +122,7 @@ contract CrispVotingScript is Script {
         params = ICrispVoting.PluginInitParams({
             dao: IDAO(address(0)),
             token: address(0),
-            enclave: crispEnvVariables.enclave,
+            interfold: crispEnvVariables.interfold,
             committeeSize: crispEnvVariables.committeeSize,
             paramSet: crispEnvVariables.paramSet,
             crispProgramAddress: crispEnvVariables.crispProgramAddress,

@@ -10,7 +10,7 @@ import {CrispVotingSetup} from "../../src/setup/CrispVotingSetup.sol";
 import {ProxyLib} from "@aragon/osx-commons-contracts/src/utils/deployment/ProxyLib.sol";
 import {ICrispVoting} from "../../src/ICrispVoting.sol";
 import {GovernanceERC20} from "@aragon/token-voting-plugin/erc20/GovernanceERC20.sol";
-import {IEnclave} from "../../src/IEnclave.sol";
+import {IInterfold} from "../../src/IInterfold.sol";
 
 contract SimpleBuilder is TestBase {
     address immutable DAO_BASE = address(new DAO());
@@ -55,10 +55,10 @@ contract SimpleBuilder is TestBase {
             GovernanceERC20.MintSettings({receivers: receivers, amounts: amounts})
         );
 
-        IEnclave.CommitteeSize committeeSize = IEnclave.CommitteeSize(0);
+        IInterfold.CommitteeSize committeeSize = IInterfold.CommitteeSize(0);
 
         address crispProgramAddress = 0x0b75A4d93c686103a903091a91C869aD9ad9CB7B;
-        address enclaveAddress = 0x95bC90fcb37684bfbAA3ffA2CbF4067fA404c4AA;
+        address interfoldAddress = 0x95bC90fcb37684bfbAA3ffA2CbF4067fA404c4AA;
 
         bytes memory computeProviderParams =
             "0x7b226e616d65223a225249534330222c22706172616c6c656c223a66616c73652c2262617463685f73697a65223a347d";
@@ -66,7 +66,7 @@ contract SimpleBuilder is TestBase {
         ICrispVoting.PluginInitParams memory pluginInitParams = ICrispVoting.PluginInitParams({
             dao: dao,
             token: address(governanceERC20Base),
-            enclave: enclaveAddress,
+            interfold: interfoldAddress,
             committeeSize: committeeSize,
             crispProgramAddress: crispProgramAddress,
             paramSet: 0,
