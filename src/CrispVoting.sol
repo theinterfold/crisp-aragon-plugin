@@ -8,6 +8,9 @@ import {
     ProposalUpgradeable
 } from "@aragon/osx-commons-contracts/src/plugin/extensions/proposal/ProposalUpgradeable.sol";
 import {IVotesUpgradeable} from "@openzeppelin/contracts-upgradeable/governance/utils/IVotesUpgradeable.sol";
+import {
+    IERC20MetadataUpgradeable
+} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
 import {IProposal} from "@aragon/osx-commons-contracts/src/plugin/extensions/proposal/IProposal.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -457,19 +460,36 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
             }
         }
 
-        // Check quorum: totalVotes * RATIO_BASE >= minParticipation * totalSupply
+        // Check quorum: turnout (totalVotes) vs. minParticipation% of total voting power.
+        // The tally is recorded in scaled vote units (each voter's power is divided by
+        // `_voteScale()` before being submitted to CRISP so it fits the plaintext vote vector),
+        // whereas `totalVotingPower` is the raw token supply. We therefore scale `totalVotes`
+        // back up rather than dividing the supply down, which avoids any truncation:
+        //   totalVotes * scale * RATIO_BASE >= minParticipation * totalSupply
         uint256 _totalVotingPower = totalVotingPower(proposal.parameters.snapshotBlock);
         if (_totalVotingPower == 0) {
             return false;
         }
 
-        bool quorumReached = totalVotes * RATIO_BASE >= uint256(votingSettings.minParticipation) * _totalVotingPower;
+        bool quorumReached =
+            totalVotes * _voteScale() * RATIO_BASE >= uint256(votingSettings.minParticipation) * _totalVotingPower;
         if (!quorumReached) {
             return false;
         }
 
         // For 2-3 options: yes (index 0) must strictly beat no (index 1)
         return counts[0] > counts[1];
+    }
+
+    /// @notice The factor by which each voter's power is divided before being submitted to CRISP.
+    /// @dev Vote weights must fit inside the CRISP plaintext vote vector, so the client divides each
+    /// voter's token power by `10 ** (decimals / 2)` before voting. The recorded tally is therefore in
+    /// these scaled units, and the quorum check scales `totalVotes` back up by the same factor so it is
+    /// comparable to the raw token supply. This MUST stay in sync with the client-side scaling.
+    /// @return The scaling factor applied to vote weights.
+    function _voteScale() internal view returns (uint256) {
+        uint8 tokenDecimals = IERC20MetadataUpgradeable(address(votingToken)).decimals();
+        return 10 ** (uint256(tokenDecimals) / 2);
     }
 
     /// @notice Whether a proposal is signaling-only (a poll) and therefore cannot be executed.

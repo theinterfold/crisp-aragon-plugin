@@ -46,16 +46,24 @@ library Utils {
         public
         returns (GovernanceERC20, CrispVotingSetup.TokenSettings memory, GovernanceERC20.MintSettings memory)
     {
+        // TOKEN_ADDRESS selects the governance token:
+        //   unset / 0x0  -> a fresh `GovernanceERC20` is deployed and minted per MINT_SETTINGS_*
+        //   an address   -> that token is used. If it already implements IVotes it is used
+        //                   directly; otherwise the setup wraps it in a GovernanceWrappedERC20.
+        // Reusing an existing token is what lets several plugins (e.g. a public and a private
+        // process) share one token, so voting power and delegation are identical across them.
         CrispVotingSetup.TokenSettings memory tokenSettings = CrispVotingSetup.TokenSettings({
-            addr: address(0), // If set to `address(0)`, a new `GovernanceERC20` token is deployed
+            addr: VM.envOr("TOKEN_ADDRESS", address(0)),
             name: VM.envString("TOKEN_NAME"),
             symbol: VM.envString("TOKEN_SYMBOL")
         });
         GovernanceERC20.MintSettings memory mintSettings =
             GovernanceERC20.MintSettings({receivers: new address[](3), amounts: new uint256[](3)});
 
-        address[] memory receivers = VM.envAddress("MINT_SETTINGS_RECEIVERS", ",");
-        uint256 amount = VM.envUint("MINT_SETTINGS_AMOUNT");
+        // Optional: only consulted when a fresh token is deployed above. An existing-token
+        // install mints nothing, so requiring these would block that path for no reason.
+        address[] memory receivers = VM.envOr("MINT_SETTINGS_RECEIVERS", ",", new address[](0));
+        uint256 amount = VM.envOr("MINT_SETTINGS_AMOUNT", uint256(0));
         mintSettings.receivers = receivers;
         mintSettings.amounts = new uint256[](receivers.length);
         for (uint256 i = 0; i < receivers.length; i++) {

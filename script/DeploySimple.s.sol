@@ -140,7 +140,12 @@ contract CrispVotingScript is Script {
             CrispVotingSetup.TokenSettings memory tokenSettings,
             GovernanceERC20.MintSettings memory mintSettings
         ) = getCrispVotingSetupParams();
-        bytes memory pluginSettingsData = abi.encode(params, tokenSettings, mintSettings);
+        // GRANT_EXECUTE_ON_DAO selects the install shape (see CrispVotingSetup.prepareInstallation):
+        //   true  (default) — standalone process: the plugin executes on the DAO itself.
+        //   false           — stage-0 body of an SPP: the SPP is the only executor, and granting
+        //                     the body EXECUTE would let a proposer bypass every later stage.
+        bool grantExecuteOnDao = vm.envOr("GRANT_EXECUTE_ON_DAO", true);
+        bytes memory pluginSettingsData = abi.encode(params, tokenSettings, mintSettings, grantExecuteOnDao);
         PluginRepo.Tag memory tag = PluginRepo.Tag(1, 1);
         pluginSettings = new IDAOFactory.PluginSettings[](1);
         pluginSettings[0] = IDAOFactory.PluginSettings(PluginSetupRef(tag, pluginRepo), pluginSettingsData);
