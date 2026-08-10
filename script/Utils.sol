@@ -57,8 +57,7 @@ library Utils {
             name: VM.envString("TOKEN_NAME"),
             symbol: VM.envString("TOKEN_SYMBOL")
         });
-        GovernanceERC20.MintSettings memory mintSettings =
-            GovernanceERC20.MintSettings({receivers: new address[](3), amounts: new uint256[](3)});
+        GovernanceERC20.MintSettings memory mintSettings;
 
         // Optional: only consulted when a fresh token is deployed above. An existing-token
         // install mints nothing, so requiring these would block that path for no reason.
