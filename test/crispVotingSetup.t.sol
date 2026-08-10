@@ -32,6 +32,13 @@ contract MockPlainErc20 {
     }
 }
 
+/// @dev A contract that is not an ERC20 at all — `balanceOf` reverts.
+contract MockNotErc20 {
+    function balanceOf(address) external pure returns (uint256) {
+        revert("not a token");
+    }
+}
+
 /// @dev IVotes-shaped token: used directly, never wrapped.
 contract MockVotesErc20 {
     mapping(address => uint256) public balanceOf;
@@ -280,5 +287,15 @@ contract CrispVotingSetupTest is Test {
             _has(revokes, plugin, address(dao), CrispVoting(setup.implementation()).SET_TARGET_CONFIG_PERMISSION_ID()),
             "SET_TARGET_CONFIG must be revoked"
         );
+
+        // Exact, not merely sufficient: a future extra revoke must fail this test rather than
+        // slip through unnoticed.
+        assertEq(revokes.length, 2, "uninstall must revoke exactly the two permissions install granted");
+    }
+
+    function test_prepareInstallationRevertsWhenTokenIsNotErc20() public {
+        address notAToken = address(new MockNotErc20());
+        vm.expectRevert(abi.encodeWithSelector(CrispVotingSetup.TokenNotERC20.selector, notAToken));
+        setup.prepareInstallation(address(dao), _encode(notAToken, true));
     }
 }
