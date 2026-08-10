@@ -75,6 +75,17 @@ contract CrispVotingSetup is PluginSetup {
     }
 
     /// @inheritdoc IPluginSetup
+    /// @dev The trailing `grantExecuteOnDao` flag selects which of the two shapes this plugin is
+    ///      installed in:
+    ///
+    ///        true  — STANDALONE process. The plugin executes its own passed proposals on the DAO
+    ///                and therefore needs `EXECUTE_PERMISSION` on it.
+    ///        false — stage-0 BODY of a Staged Proposal Processor (SPP). The SPP is the only
+    ///                executor; the body reports its result upwards and never touches the DAO.
+    ///
+    ///      INVARIANT: a body must never receive `EXECUTE_PERMISSION` on the DAO. If it did, a
+    ///      proposer could execute straight from stage 0 and skip every later stage — including a
+    ///      foundation veto/approval gate — which is the entire point of staging the process.
     function prepareInstallation(address _dao, bytes memory _installationParams)
         external
         returns (address plugin, PreparedSetupData memory preparedSetupData)
@@ -83,9 +94,10 @@ contract CrispVotingSetup is PluginSetup {
         (
             ICrispVoting.PluginInitParams memory params,
             TokenSettings memory tokenSettings,
-            GovernanceERC20.MintSettings memory mintSettings
+            GovernanceERC20.MintSettings memory mintSettings,
+            bool grantExecuteOnDao
         ) = abi.decode(
-            _installationParams, (ICrispVoting.PluginInitParams, TokenSettings, GovernanceERC20.MintSettings)
+            _installationParams, (ICrispVoting.PluginInitParams, TokenSettings, GovernanceERC20.MintSettings, bool)
         );
 
         address token = tokenSettings.addr;
@@ -119,29 +131,52 @@ contract CrispVotingSetup is PluginSetup {
         // 1) Upgradeable plugin variant
         plugin = ProxyLib.deployUUPSProxy(implementation(), abi.encodeCall(CrispVoting.initialize, params));
 
-        // Request permissions
-        PermissionLib.MultiTargetPermission[] memory permissions =
-            new PermissionLib.MultiTargetPermission[](tokenSettings.addr != address(0) ? 1 : 2);
+        // Request permissions. Base set: the DAO may re-point the plugin's executor
+        // (`setTargetConfig`). EXECUTE on the DAO is added only for a standalone process, and a
+        // mint permission only when a fresh token was deployed here.
+        uint256 permissionCount = 1;
+        if (grantExecuteOnDao) permissionCount++;
+        if (tokenSettings.addr == address(0)) permissionCount++;
 
-        // The pugin has EXECUTE_PERMISSION_ID on the DAO
+        PermissionLib.MultiTargetPermission[] memory permissions =
+            new PermissionLib.MultiTargetPermission[](permissionCount);
+
+        // The DAO can re-target the plugin's executor. An SPP body MUST be re-pointed at the
+        // shared `Executor` (delegatecall) so that its `reportProposalResult` callback reaches the
+        // SPP with the BODY as `msg.sender`; without this grant nobody could ever do so, and the
+        // plugin could not serve as a body at all. Harmless for a standalone process.
         permissions[0] = PermissionLib.MultiTargetPermission({
             operation: PermissionLib.Operation.Grant,
-            where: _dao,
-            who: plugin,
+            where: plugin,
+            who: _dao,
             condition: PermissionLib.NO_CONDITION,
-            permissionId: DAO(payable(_dao)).EXECUTE_PERMISSION_ID()
+            permissionId: crispVotingBase.SET_TARGET_CONFIG_PERMISSION_ID()
         });
+
+        uint256 next = 1;
+
+        // Standalone only — see the invariant on `prepareInstallation` above.
+        if (grantExecuteOnDao) {
+            permissions[next++] = PermissionLib.MultiTargetPermission({
+                operation: PermissionLib.Operation.Grant,
+                where: _dao,
+                who: plugin,
+                condition: PermissionLib.NO_CONDITION,
+                permissionId: DAO(payable(_dao)).EXECUTE_PERMISSION_ID()
+            });
+        }
 
         // Grant the `MINT_PERMISSION_ID` on the token to the DAO if deploying a new token
         if (tokenSettings.addr == address(0)) {
             bytes32 tokenMintPermission = GovernanceERC20(token).MINT_PERMISSION_ID();
 
-            permissions[1] = PermissionLib.MultiTargetPermission({
+            // Minting is governance-only. This previously granted to ANY_ADDR
+            // (`address(type(uint160).max)`) "for testing", which let ANYONE mint the governance
+            // token and so manufacture voting power at will.
+            permissions[next] = PermissionLib.MultiTargetPermission({
                 operation: PermissionLib.Operation.Grant,
                 where: token,
-                /// @notice For testing only, we are going to allow anyone to mint. This should be set to the DAO instead
-                /// who: _dao,
-                who: address(type(uint160).max),
+                who: _dao,
                 condition: PermissionLib.NO_CONDITION,
                 permissionId: tokenMintPermission
             });
@@ -156,11 +191,23 @@ contract CrispVotingSetup is PluginSetup {
         view
         returns (PermissionLib.MultiTargetPermission[] memory permissions)
     {
-        // Request reverting the granted permissions
-        permissions = new PermissionLib.MultiTargetPermission[](1);
+        // Request reverting the granted permissions. A permission granted at install and not
+        // revoked here outlives the plugin.
+        permissions = new PermissionLib.MultiTargetPermission[](2);
 
-        // the plugin has the Execute permission on the DAO. This needs to be revoked.
         permissions[0] = PermissionLib.MultiTargetPermission({
+            operation: PermissionLib.Operation.Revoke,
+            where: _payload.plugin,
+            who: _dao,
+            condition: PermissionLib.NO_CONDITION,
+            permissionId: crispVotingBase.SET_TARGET_CONFIG_PERMISSION_ID()
+        });
+
+        // Revoked unconditionally. The uninstall payload does not carry the install params, so the
+        // shape it was installed in is unknowable here — and a revoke of a permission that was
+        // never granted is a no-op, whereas leaving a standalone plugin's EXECUTE in place after
+        // uninstall would leave it able to act on the DAO forever.
+        permissions[1] = PermissionLib.MultiTargetPermission({
             operation: PermissionLib.Operation.Revoke,
             where: _dao,
             who: _payload.plugin,
