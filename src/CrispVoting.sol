@@ -150,12 +150,19 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
                 revert InvalidOptionCount(numOptions);
             }
 
+            /// @notice The exact tuple `CRISPProgram.validate` decodes — all six fields are
+            /// required, and it reverts on a short encoding.
+            /// The census is always TOKEN: the electorate is whoever holds `votingToken` at the
+            /// snapshot, which the coordinator enumerates. BY_REQUESTER would need this plugin to
+            /// expose `getCensus(uint256) returns (address[])` — it has no membership roster to
+            /// answer that with.
             bytes memory customParams = abi.encode(
                 address(votingToken),
                 votingSettings.minProposerVotingPower,
                 numOptions,
                 ICRISP.CreditMode(creditMode),
-                credits
+                credits,
+                ICRISP.CensusMode.TOKEN
             );
 
             IInterfold.E3RequestParams memory requestParams = IInterfold.E3RequestParams({
