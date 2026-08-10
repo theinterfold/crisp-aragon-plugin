@@ -340,6 +340,9 @@ interface IInterfold {
     /// @notice Returns the BondingRegistry contract.
     function bondingRegistry() external view returns (IBondingRegistry);
 
+    /// @notice Returns the E3 refund manager, which pays requester refunds for failed E3s.
+    function e3RefundManager() external view returns (address);
+
     /// @notice Called by CiphernodeRegistry when committee is finalized (sortition complete).
     /// @dev Updates E3 lifecycle to CommitteeFinalized stage, starts DKG deadline.
     /// @param e3Id ID of the E3.

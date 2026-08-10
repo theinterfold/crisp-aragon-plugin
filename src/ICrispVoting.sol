@@ -41,11 +41,29 @@ interface ICrispVoting {
     /// @param actual The provided value.
     error RatioOutOfBounds(uint256 limit, uint256 actual);
 
+    /// @notice Thrown when the resolved fee payer has not escrowed enough credit for the E3 fee.
+    /// @param payer The account whose credit was short.
+    /// @param required The fee the E3 request costs.
+    /// @param available The payer's escrowed credit.
+    error InsufficientFeeCredit(address payer, uint256 required, uint256 available);
+
+    /// @notice Thrown when SPP-shaped metadata names an SPP proposal with no creator.
+    error InvalidSppMetadata();
+
     /// @notice Emitted when the voting settings are updated.
     /// @param minProposerVotingPower The minimum voting power needed to create a proposal.
     /// @param minParticipation The minimum participation required for quorum.
     /// @param minDuration The minimum duration of a vote.
     event VotingSettingsUpdated(uint256 minProposerVotingPower, uint32 minParticipation, uint64 minDuration);
+
+    /// @notice Emitted when fee-token credit is escrowed for a creator.
+    event FeeDeposited(address indexed payer, uint256 amount);
+
+    /// @notice Emitted when unused fee-token credit is withdrawn.
+    event FeeWithdrawn(address indexed payer, uint256 amount);
+
+    /// @notice Emitted when a failed E3's requester refund is credited back to the payer.
+    event RefundClaimed(uint256 indexed proposalId, uint256 indexed e3Id, address indexed payer, uint256 amount);
 
     /// @notice A struct for the voting settings.
     /// @param minProposerVotingPower The minimum voting power needed to propose a vote.
