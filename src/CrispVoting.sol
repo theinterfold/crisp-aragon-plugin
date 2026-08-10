@@ -19,6 +19,8 @@ import {IInterfold} from "./IInterfold.sol";
 import {E3, IE3Program} from "./IE3.sol";
 import {ICrispVoting} from "./ICrispVoting.sol";
 import {ICRISP} from "./ICRISP.sol";
+import {IStagedProposalProcessor} from "./IStagedProposalProcessor.sol";
+import {IE3RefundManager} from "./IE3RefundManager.sol";
 
 /// @title CrispVoting
 /// @notice An Aragon OSx governance plugin that runs private, encrypted votes through Interfold's
@@ -128,13 +130,11 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
                 revert ProposalAlreadyExists(proposalId);
             }
 
-            /// @notice Check if the sender has enough voting power
-            uint256 _minProposerVotingPower = minProposerVotingPower();
-            if (_minProposerVotingPower != 0) {
-                if (votingToken.getVotes(_msgSender()) < _minProposerVotingPower) {
-                    revert ProposalCreationForbidden(_msgSender());
-                }
-            }
+            /// @notice Resolve and record who pays for this proposal's E3. In the DIRECT shape
+            /// that is the caller, and their proposer eligibility is enforced here. In the STAGED
+            /// (SPP) shape the caller is the SPP contract — which holds no tokens and no voting
+            /// power — so the payer is the creator of the parent SPP proposal instead.
+            proposalPayer[proposalId] = _resolvePayer(_metadata);
         }
 
         /// @notice Validate and normalise the dates, enforcing the configured minimum duration.
@@ -170,8 +170,9 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
 
             // calculate the E3 fee
             uint256 fee = interfold.getE3Quote(requestParams);
-            // take it from the caller
-            interfoldFeeToken.safeTransferFrom(_msgSender(), address(this), fee);
+            // Debit the recorded payer's escrowed credit. Pulling from `_msgSender()` would be
+            // wrong under the SPP, where the caller is the SPP contract rather than the creator.
+            _chargeFee(proposalId, fee);
             // approve the interfold contract to take the fee
             interfoldFeeToken.forceApprove(address(interfold), fee);
 
@@ -527,5 +528,103 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     /// @notice This empty reserved space is put in place to allow future versions to add new variables
     ///         without shifting down storage in the inheritance chain
     ///         (see [OpenZeppelin's guide about storage gaps](https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps)).
-    uint256[49] private __gap;
+    /// @notice Deposits fee-token credit for `msg.sender`, consumed by proposals they create.
+    /// @dev Requires a prior ERC20 approval to this plugin.
+    /// @param _amount The fee-token amount to deposit.
+    function deposit(uint256 _amount) external {
+        interfoldFeeToken.safeTransferFrom(_msgSender(), address(this), _amount);
+        feeCredits[_msgSender()] += _amount;
+
+        emit FeeDeposited(_msgSender(), _amount);
+    }
+
+    /// @notice Withdraws unused fee-token credit back to `msg.sender`.
+    /// @param _amount The fee-token amount to withdraw.
+    function withdraw(uint256 _amount) external {
+        // checked arithmetic reverts on over-withdrawal
+        feeCredits[_msgSender()] -= _amount;
+        interfoldFeeToken.safeTransfer(_msgSender(), _amount);
+
+        emit FeeWithdrawn(_msgSender(), _amount);
+    }
+
+    /// @notice Claims the requester refund for a proposal whose E3 failed, crediting it back to
+    /// the recorded fee payer.
+    /// @dev Permissionless: the refund manager only ever pays the requester (this plugin), and
+    /// the credit always goes to the recorded payer — the caller gets nothing. The refund manager
+    /// enforces that the E3 actually failed and that it is not double-claimed.
+    /// @param _proposalId The id of the proposal whose E3 failed.
+    /// @return amount The refunded fee-token amount.
+    function claimRefund(uint256 _proposalId) external returns (uint256 amount) {
+        if (!_proposalExists(_proposalId)) {
+            revert NonexistentProposal(_proposalId);
+        }
+
+        uint256 e3Id = proposals[_proposalId].e3Id;
+        address payer = proposalPayer[_proposalId];
+        amount = IE3RefundManager(interfold.e3RefundManager()).claimRequesterRefund(e3Id);
+        feeCredits[payer] += amount;
+
+        emit RefundClaimed(_proposalId, e3Id, payer, amount);
+    }
+
+    /// @notice Resolves who pays for a proposal's E3.
+    /// @dev Two shapes:
+    ///   STAGED — the SPP calls this plugin, and passes `abi.encode(spp, sppProposalId, stageId)`
+    ///            as metadata. The payer is the parent proposal's creator. Only treated as staged
+    ///            when the caller IS the SPP it names, so a direct caller cannot forge 96-byte
+    ///            metadata naming someone else's SPP proposal and spend THEIR credit.
+    ///   DIRECT — the caller pays, and must meet `minProposerVotingPower`.
+    /// @param _metadata The proposal metadata as supplied by the caller.
+    /// @return payer The account whose escrowed credit funds the E3.
+    function _resolvePayer(bytes memory _metadata) internal view returns (address payer) {
+        if (_metadata.length == 96) {
+            (address spp, uint256 sppProposalId,) = abi.decode(_metadata, (address, uint256, uint16));
+
+            if (spp == _msgSender()) {
+                payer = IStagedProposalProcessor(spp).getProposal(sppProposalId).creator;
+                if (payer == address(0)) {
+                    revert InvalidSppMetadata();
+                }
+                return payer;
+            }
+        }
+
+        payer = _msgSender();
+
+        uint256 _minProposerVotingPower = minProposerVotingPower();
+        if (_minProposerVotingPower != 0) {
+            if (votingToken.getVotes(payer) < _minProposerVotingPower) {
+                revert ProposalCreationForbidden(payer);
+            }
+        }
+    }
+
+    /// @notice Debits the recorded payer's escrowed credit for the Interfold E3 fee.
+    /// @param _proposalId The proposal whose payer was recorded by `createProposal`.
+    /// @param _fee The Interfold E3 fee to charge.
+    function _chargeFee(uint256 _proposalId, uint256 _fee) internal {
+        address payer = proposalPayer[_proposalId];
+
+        uint256 credit = feeCredits[payer];
+        if (credit < _fee) {
+            revert InsufficientFeeCredit(payer, _fee, credit);
+        }
+
+        unchecked {
+            feeCredits[payer] = credit - _fee;
+        }
+    }
+
+    /// @notice Escrowed fee-token credit per creator. Creators `deposit` before creating a
+    /// proposal; `createProposal` debits the resolved payer's credit rather than pulling from
+    /// the caller — the caller is the SPP in the staged shape, and it holds no tokens.
+    mapping(address => uint256) public feeCredits;
+
+    /// @notice The fee payer recorded for each proposal, used to route failed-E3 refunds back
+    /// to whoever actually paid.
+    mapping(uint256 => address) public proposalPayer;
+
+    /// @dev Reduced from 49 to 47 to account for the two mappings appended above.
+    uint256[47] private __gap;
 }
