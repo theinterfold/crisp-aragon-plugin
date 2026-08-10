@@ -164,7 +164,6 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
                 e3Program: IE3Program(crispProgramAddress),
                 computeProviderParams: computeProviderParams,
                 customParams: customParams,
-                proofAggregationEnabled: false,
                 paramSet: paramSet
             });
 

@@ -19,10 +19,9 @@ interface IInterfold {
 
     /// @notice Sizes of committees for E3 computations
     enum CommitteeSize {
+        Minimum,
         Micro,
-        Small,
-        Medium,
-        Large
+        Small
     }
 
     /// @notice Lifecycle stages of an E3 computation
@@ -199,7 +198,7 @@ interface IInterfold {
     ////////////////////////////////////////////////////////////
 
     /// @notice This struct contains the parameters to submit a request to Interfold.
-    /// @param committeeSize The M/N threshold and honest parties for the committee.
+    /// @param committeeSize The configured committee size.
     /// @param inputWindow When the program will start and stop accepting inputs.
     /// @param e3Program The address of the E3 Program.
     /// @param paramSet The BFV encryption parameter set to use.
@@ -212,12 +211,6 @@ interface IInterfold {
         uint8 paramSet;
         bytes computeProviderParams;
         bytes customParams;
-        /// @notice When true, ciphernodes generate and fold wrapper proofs
-        ///         for DKG proof aggregation (public verifiability). When
-        ///         false, wrapper/fold proofs are skipped to reduce latency.
-        ///         C5 and C7 proofs are always generated and verified on-chain
-        ///         regardless of this flag.
-        bool proofAggregationEnabled;
     }
 
     ////////////////////////////////////////////////////////////

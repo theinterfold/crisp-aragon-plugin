@@ -12,6 +12,20 @@ import {ICrispVoting} from "../../src/ICrispVoting.sol";
 import {GovernanceERC20} from "@aragon/token-voting-plugin/erc20/GovernanceERC20.sol";
 import {IInterfold} from "../../src/IInterfold.sol";
 
+/// @dev The minimum Interfold surface `CrispVoting.initialize` touches: it reads `feeToken()` to
+/// cache the fee token, so a plain address with no code makes every build revert.
+contract StubInterfold {
+    address public immutable feeTokenAddr;
+
+    constructor(address _feeToken) {
+        feeTokenAddr = _feeToken;
+    }
+
+    function feeToken() external view returns (address) {
+        return feeTokenAddr;
+    }
+}
+
 contract SimpleBuilder is TestBase {
     address immutable DAO_BASE = address(new DAO());
     address immutable UPGRADEABLE_PLUGIN_BASE = address(new CrispVoting());
@@ -58,7 +72,8 @@ contract SimpleBuilder is TestBase {
         IInterfold.CommitteeSize committeeSize = IInterfold.CommitteeSize(0);
 
         address crispProgramAddress = 0x0b75A4d93c686103a903091a91C869aD9ad9CB7B;
-        address interfoldAddress = 0x95bC90fcb37684bfbAA3ffA2CbF4067fA404c4AA;
+        // The governance token doubles as the fee token here; these tests never move fees.
+        address interfoldAddress = address(new StubInterfold(address(governanceERC20Base)));
 
         bytes memory computeProviderParams =
             "0x7b226e616d65223a225249534330222c22706172616c6c656c223a66616c73652c2262617463685f73697a65223a347d";

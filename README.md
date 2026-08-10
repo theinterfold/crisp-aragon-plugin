@@ -36,7 +36,7 @@ Read more about CRISP and Interfold [here](https://interfold.com) and [here](htt
 To deploy the plugin, first configure the `.env` file with the correct values. Then, run the deployment script:
 
 ```sh
-forge script script/DeploySimple.s.sol:CrispVotingScript --rpc-url <rpc-url> --broadcast --verify
+forge script script/DeploySimple.s.sol:DeploySimpleScript --rpc-url <rpc-url> --broadcast --verify
 ```
 
 ## Test
