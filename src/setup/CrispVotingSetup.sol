@@ -166,7 +166,17 @@ contract CrispVotingSetup is PluginSetup {
             });
         }
 
-        // Grant the `MINT_PERMISSION_ID` on the token to the DAO if deploying a new token
+        // Grant `MINT_PERMISSION_ID` on the token to the DAO, but ONLY when this install deployed
+        // the token. An existing token is not ours to hand out rights over: the caller passed it
+        // in, whoever governs it already does, and requesting mint rights over someone else's
+        // token would be an escalation.
+        //
+        // Deliberately NOT revoked in `prepareUninstallation`: the token outlives the plugin. A
+        // second plugin can be installed against this same token (pass its address as
+        // `tokenSettings.addr`) to share voting power and delegation — revoking on uninstall of
+        // the first plugin would silently strip the DAO's minting rights over a token the second
+        // one still depends on. The DAO holds ROOT on itself and can re-grant by proposal if it
+        // ever genuinely wants that.
         if (tokenSettings.addr == address(0)) {
             bytes32 tokenMintPermission = GovernanceERC20(token).MINT_PERMISSION_ID();
 

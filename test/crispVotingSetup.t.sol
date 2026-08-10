@@ -198,6 +198,25 @@ contract CrispVotingSetupTest is Test {
         assertTrue(sawMint, "a freshly deployed token must grant MINT to the DAO");
     }
 
+    /// @dev Uninstall must NOT revoke minting. The token outlives the plugin, and a second plugin
+    ///      can be installed against the same token to share voting power — revoking here would
+    ///      strip the DAO's rights over a token that other plugin still depends on. A deliberate
+    ///      asymmetry; do not "fix" it for the sake of symmetry.
+    function test_prepareUninstallationDoesNotRevokeMinting() public {
+        (address plugin,) = setup.prepareInstallation(address(dao), _encode(address(0), true));
+
+        PermissionLib.MultiTargetPermission[] memory revokes = setup.prepareUninstallation(
+            address(dao), IPluginSetup.SetupPayload({plugin: plugin, currentHelpers: new address[](0), data: bytes("")})
+        );
+
+        for (uint256 i = 0; i < revokes.length; i++) {
+            assertTrue(
+                revokes[i].permissionId != GovernanceERC20(setup.governanceERC20Base()).MINT_PERMISSION_ID(),
+                "uninstall must leave the DAO's minting rights over its own token intact"
+            );
+        }
+    }
+
     /// @dev An existing token is not ours to mint, so no mint permission is requested at all.
     function test_prepareInstallationRequestsNoMintPermissionForAnExistingToken() public {
         (, IPluginSetup.PreparedSetupData memory data) =
