@@ -20,4 +20,13 @@ interface ICRISP {
         /// @notice Credits are custom (can be based on token balance, etc)
         CUSTOM
     }
+
+    /// @notice Where the eligible voter set for a round comes from. Mirrors CRISPProgram.CensusMode
+    /// — the program range-checks this value and stores it, so the ordering must match exactly.
+    enum CensusMode {
+        /// @notice Derived from token balances by the coordinator.
+        TOKEN,
+        /// @notice Supplied by the requester via `getCensus(uint256 e3Id) returns (address[])`.
+        BY_REQUESTER
+    }
 }
