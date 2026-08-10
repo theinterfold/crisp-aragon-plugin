@@ -482,14 +482,29 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     }
 
     /// @notice The factor by which each voter's power is divided before being submitted to CRISP.
-    /// @dev Vote weights must fit inside the CRISP plaintext vote vector, so the client divides each
-    /// voter's token power by `10 ** (decimals / 2)` before voting. The recorded tally is therefore in
-    /// these scaled units, and the quorum check scales `totalVotes` back up by the same factor so it is
-    /// comparable to the raw token supply. This MUST stay in sync with the client-side scaling.
+    /// @dev Vote weights must fit inside the CRISP plaintext vote vector, so the producer keeps ONE
+    /// decimal of precision — `balance / 10 ** (decimals - 1)` — before encrypting. The recorded
+    /// tally is therefore in those units, and the quorum check scales `totalVotes` back up by the
+    /// same factor to compare like with like against the raw token supply.
+    ///
+    /// This MUST stay in sync with the producer. The authority is the CRISP SDK's `getScaledBalance`:
+    ///     const precision = decimals > 1n ? decimals - 1n : 0n;
+    ///     return balance / 10n ** precision;
+    ///
+    /// It previously returned `10 ** (decimals / 2)`, which for an 18-decimal token is 10**9 against
+    /// the producer's 10**17 — understating turnout by 10**8, and so making any non-zero
+    /// `minParticipation` effectively unreachable.
+    ///
+    /// `decimals()` is not part of `IVotesUpgradeable` and the setup accepts bare IVotes tokens, so a
+    /// missing `decimals()` must not brick `hasSucceeded`/`canExecute`/`execute` after install: those
+    /// tokens, and 0/1-decimal tokens, are treated as unscaled.
     /// @return The scaling factor applied to vote weights.
     function _voteScale() internal view returns (uint256) {
-        uint8 tokenDecimals = IERC20MetadataUpgradeable(address(votingToken)).decimals();
-        return 10 ** (uint256(tokenDecimals) / 2);
+        try IERC20MetadataUpgradeable(address(votingToken)).decimals() returns (uint8 tokenDecimals) {
+            return tokenDecimals > 1 ? 10 ** (uint256(tokenDecimals) - 1) : 1;
+        } catch {
+            return 1;
+        }
     }
 
     /// @notice Whether a proposal is signaling-only (a poll) and therefore cannot be executed.

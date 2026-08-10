@@ -20,3 +20,6 @@ broadcast/*
 broadcast/*/31337/
 
 node_modules 
+# Local env backups (contain PRIVATE_KEY / API keys)
+.env.bak*
+.env.*.bak
