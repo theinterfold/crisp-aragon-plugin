@@ -21,7 +21,7 @@ import {ICrispVoting} from "../src/ICrispVoting.sol";
 import {Utils} from "../script/Utils.sol";
 import {IDAOFactory} from "../src/IDAOFactory.sol";
 
-contract CrispVotingScript is Script {
+contract DeploySimpleScript is Script {
     address public pluginRepoFactory;
     IDAOFactory public daoFactory;
     string public nameWithEntropy;

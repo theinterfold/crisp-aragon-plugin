@@ -74,6 +74,7 @@ interface IDecryptionVerifier {
  * @param ciphertextOutput Hash of the encrypted output data produced by the computation
  * @param plaintextOutput Decrypted output data after committee decryption
  * @param requester Address of the entity that requested the E3 computation
+ * @param ciphertextCommitment Commitment to the ciphertext inputs accepted during the input window
  */
 struct E3 {
     uint256 seed;
@@ -90,5 +91,5 @@ struct E3 {
     bytes32 ciphertextOutput;
     bytes plaintextOutput;
     address requester;
-    bool proofAggregationEnabled;
+    bytes32 ciphertextCommitment;
 }
