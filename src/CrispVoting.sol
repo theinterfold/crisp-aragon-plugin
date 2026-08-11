@@ -479,7 +479,7 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
         }
 
         bool quorumReached =
-            totalVotes * _voteScale() * RATIO_BASE >= uint256(votingSettings.minParticipation) * _totalVotingPower;
+            totalVotes * _voteScale() * RATIO_BASE >= uint256(proposal.parameters.minParticipation) * _totalVotingPower;
         if (!quorumReached) {
             return false;
         }
