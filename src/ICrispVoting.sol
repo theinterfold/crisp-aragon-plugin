@@ -88,7 +88,10 @@ interface ICrispVoting {
     /// @param numOptions The number of options for the vote.
     /// @param startDate The start date of the proposal vote.
     /// @param endDate The end date of the proposal vote.
-    /// @param snapshotBlock The number of the block prior to the proposal creation.
+    /// @param snapshotBlock The timepoint the voting power census is taken at, one tick before
+    ///        proposal creation, in the voting token's ERC-6372 clock units — a block number for
+    ///        the OZ default clock, a UNIX timestamp for a `CLOCK_MODE=timestamp` token. Named
+    ///        `snapshotBlock` for compatibility with Aragon's TokenVoting parameters.
     /// @param minVotingPower The minimum voting power needed.
     /// @param minParticipation The minimum participation needed.
     /// @param creditMode The credit mode for the vote. CONSTANT proposals are signaling-only.
@@ -143,6 +146,23 @@ interface ICrispVoting {
         IPlugin.TargetConfig targetConfig;
         uint256 e3Id;
     }
+
+    /// @notice Quotes the Interfold E3 fee a proposal with these parameters would cost.
+    /// @dev Takes the same dates and encoded data as `createProposal` and runs them through the
+    /// same request construction, so a caller can escrow exactly the right credit before creating
+    /// rather than discovering the price from a reverted transaction. Reverts identically to
+    /// `createProposal` on invalid dates or option counts.
+    ///
+    /// The quote is only as stable as its inputs: passing `0` for a date normalises it to
+    /// `block.timestamp`, so the window — and therefore the fee — shifts between the quote and the
+    /// transaction that uses it. Pass explicit dates for a figure that will still hold when the
+    /// proposal is created.
+    /// @param _startDate The proposal start date, or 0 for `block.timestamp`.
+    /// @param _endDate The proposal end date, or 0 for the earliest date `minDuration` allows.
+    /// @param _data The same ABI-encoded `(allowFailureMap, numOptions, creditMode, credits)` that
+    /// would be passed to `createProposal`.
+    /// @return fee The E3 fee, denominated in the Interfold fee token.
+    function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data) external view returns (uint256 fee);
 
     /// @notice Returns the minimum voting power needed to propose a vote.
     /// @return The minimum voting power needed to propose a vote.
