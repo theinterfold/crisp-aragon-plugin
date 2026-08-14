@@ -81,13 +81,20 @@ contract MockInterfold {
         return feeTokenAddr;
     }
 
-    function getE3Quote(IInterfold.E3RequestParams calldata) external view returns (uint256) {
-        return quote;
+    /// @dev Priced off the request so a quote that was built from different parameters than the
+    /// request produces a different number. A flat price would let `quoteFee` and `createProposal`
+    /// disagree about the window or the ballot and still look identical in tests.
+    function _price(IInterfold.E3RequestParams calldata p) internal view returns (uint256) {
+        return quote + (p.inputWindow[1] - p.inputWindow[0]) + p.customParams.length;
+    }
+
+    function getE3Quote(IInterfold.E3RequestParams calldata p) external view returns (uint256) {
+        return _price(p);
     }
 
     /// @dev Must match IInterfold.request exactly — it returns (uint256, E3), not (uint256, bytes).
-    function request(IInterfold.E3RequestParams calldata) external returns (uint256, E3 memory e3) {
-        MockFeeToken(feeTokenAddr).transferFrom(msg.sender, address(this), quote);
+    function request(IInterfold.E3RequestParams calldata p) external returns (uint256, E3 memory e3) {
+        MockFeeToken(feeTokenAddr).transferFrom(msg.sender, address(this), _price(p));
         return (1, e3);
     }
 }
@@ -184,6 +191,21 @@ contract CrispFeeEscrowTest is Test {
         return abi.encode(uint256(0), uint256(3), uint256(1), uint256(0));
     }
 
+    function _start() internal view returns (uint64) {
+        return uint64(block.timestamp) + 1;
+    }
+
+    function _end() internal view returns (uint64) {
+        return uint64(block.timestamp) + 3600;
+    }
+
+    /// @dev The fee these tests expect to be charged. Asserting against `quoteFee` rather than a
+    /// literal is the point: if the quote were built from different parameters than the request,
+    /// the priced mock would return a different number and every expectation below would break.
+    function _quote() internal view returns (uint256) {
+        return plugin.quoteFee(_start(), _end(), _data());
+    }
+
     // --- escrow basics ---
 
     function test_depositAndWithdraw() public {
@@ -215,10 +237,12 @@ contract CrispFeeEscrowTest is Test {
         spp.setCreator(7, alice);
         votingToken.setVotes(address(spp), 0); // the SPP has no voting power, and needs none
 
-        vm.prank(address(spp));
-        spp.createOn(address(plugin), 7, uint64(block.timestamp + 1), uint64(block.timestamp + 3600), _data());
+        uint256 fee = _quote();
 
-        assertEq(plugin.feeCredits(alice), 40e6, "the parent creator's credit paid the fee");
+        vm.prank(address(spp));
+        spp.createOn(address(plugin), 7, _start(), _end(), _data());
+
+        assertEq(plugin.feeCredits(alice), 50e6 - fee, "the parent creator's credit paid the fee");
         assertEq(feeToken.balanceOf(address(spp)), 0, "the SPP never needed tokens");
     }
 
@@ -226,8 +250,8 @@ contract CrispFeeEscrowTest is Test {
     function test_sppProposalRevertsWhenTheCreatorHasNoCredit() public {
         spp.setCreator(7, alice); // alice never deposited
 
-        vm.expectRevert(abi.encodeWithSelector(ICrispVoting.InsufficientFeeCredit.selector, alice, 10e6, 0));
-        spp.createOn(address(plugin), 7, uint64(block.timestamp + 1), uint64(block.timestamp + 3600), _data());
+        vm.expectRevert(abi.encodeWithSelector(ICrispVoting.InsufficientFeeCredit.selector, alice, _quote(), 0));
+        spp.createOn(address(plugin), 7, _start(), _end(), _data());
     }
 
     // --- the attack the attestation prevents ---
@@ -243,11 +267,13 @@ contract CrispFeeEscrowTest is Test {
         // Mallory calls directly, pretending to be a sub-proposal of alice's SPP proposal.
         bytes memory forged = abi.encode(address(spp), uint256(7), uint16(0));
 
+        // Read the quote BEFORE the prank: `vm.prank` applies to the next call, and a `quoteFee`
+        // in the expectRevert arguments would swallow it.
+        uint256 fee = _quote();
+
         vm.prank(mallory);
-        vm.expectRevert(abi.encodeWithSelector(ICrispVoting.InsufficientFeeCredit.selector, mallory, 10e6, 0));
-        plugin.createProposal(
-            forged, new Action[](0), uint64(block.timestamp + 1), uint64(block.timestamp + 3600), _data()
-        );
+        vm.expectRevert(abi.encodeWithSelector(ICrispVoting.InsufficientFeeCredit.selector, mallory, fee, 0));
+        plugin.createProposal(forged, new Action[](0), _start(), _end(), _data());
 
         assertEq(plugin.feeCredits(alice), 50e6, "alice's credit must be untouched");
     }
@@ -258,12 +284,12 @@ contract CrispFeeEscrowTest is Test {
         _fund(alice, 50e6);
         votingToken.setVotes(alice, 1);
 
-        vm.prank(alice);
-        plugin.createProposal(
-            bytes("ipfs://x"), new Action[](0), uint64(block.timestamp + 1), uint64(block.timestamp + 3600), _data()
-        );
+        uint256 fee = _quote();
 
-        assertEq(plugin.feeCredits(alice), 40e6, "the direct caller pays from their own escrow");
+        vm.prank(alice);
+        plugin.createProposal(bytes("ipfs://x"), new Action[](0), _start(), _end(), _data());
+
+        assertEq(plugin.feeCredits(alice), 50e6 - fee, "the direct caller pays from their own escrow");
     }
 
     function test_directProposalStillEnforcesProposerVotingPower() public {
@@ -272,8 +298,6 @@ contract CrispFeeEscrowTest is Test {
 
         vm.prank(mallory);
         vm.expectRevert(abi.encodeWithSelector(ICrispVoting.ProposalCreationForbidden.selector, mallory));
-        plugin.createProposal(
-            bytes("ipfs://x"), new Action[](0), uint64(block.timestamp + 1), uint64(block.timestamp + 3600), _data()
-        );
+        plugin.createProposal(bytes("ipfs://x"), new Action[](0), _start(), _end(), _data());
     }
 }

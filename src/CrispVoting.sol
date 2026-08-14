@@ -8,6 +8,7 @@ import {
     ProposalUpgradeable
 } from "@aragon/osx-commons-contracts/src/plugin/extensions/proposal/ProposalUpgradeable.sol";
 import {IVotesUpgradeable} from "@openzeppelin/contracts-upgradeable/governance/utils/IVotesUpgradeable.sol";
+import {IERC6372Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC6372Upgradeable.sol";
 import {
     IERC20MetadataUpgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
@@ -146,33 +147,8 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
             (uint256 _allowFailureMap, uint256 numOptions, uint256 creditMode, uint256 credits) =
                 abi.decode(_data, (uint256, uint256, uint256, uint256));
 
-            if (numOptions < 2) {
-                revert InvalidOptionCount(numOptions);
-            }
-
-            /// @notice The exact tuple `CRISPProgram.validate` decodes — all six fields are
-            /// required, and it reverts on a short encoding.
-            /// The census is always TOKEN: the electorate is whoever holds `votingToken` at the
-            /// snapshot, which the coordinator enumerates. BY_REQUESTER would need this plugin to
-            /// expose `getCensus(uint256) returns (address[])` — it has no membership roster to
-            /// answer that with.
-            bytes memory customParams = abi.encode(
-                address(votingToken),
-                votingSettings.minProposerVotingPower,
-                numOptions,
-                ICRISP.CreditMode(creditMode),
-                credits,
-                ICRISP.CensusMode.TOKEN
-            );
-
-            IInterfold.E3RequestParams memory requestParams = IInterfold.E3RequestParams({
-                committeeSize: committeeSize,
-                inputWindow: [uint256(_startDate), uint256(_endDate)],
-                e3Program: IE3Program(crispProgramAddress),
-                computeProviderParams: computeProviderParams,
-                customParams: customParams,
-                paramSet: paramSet
-            });
+            IInterfold.E3RequestParams memory requestParams =
+                _buildRequestParams(_startDate, _endDate, numOptions, creditMode, credits);
 
             // calculate the E3 fee
             uint256 fee = interfold.getE3Quote(requestParams);
@@ -191,8 +167,11 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
                 numOptions: numOptions,
                 startDate: _startDate,
                 endDate: _endDate,
-                // snapshot the previous block so voting power is read from a finalized block
-                snapshotBlock: block.number - 1,
+                // Snapshot one tick before now, so voting power is read from a finalized
+                // timepoint. This is `_tokenClock()`, NOT `block.number`: the units must be
+                // the voting token's ERC-6372 clock or every `getPastVotes` /
+                // `getPastTotalSupply` read against this value is meaningless.
+                snapshotBlock: _tokenClock() - 1,
                 minVotingPower: votingSettings.minProposerVotingPower,
                 minParticipation: votingSettings.minParticipation,
                 creditMode: ICRISP.CreditMode(creditMode)
@@ -391,6 +370,64 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
         );
     }
 
+    /// @inheritdoc ICrispVoting
+    function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data)
+        external
+        view
+        returns (uint256 fee)
+    {
+        (uint64 startDate, uint64 endDate) = _validateProposalDates(_startDate, _endDate);
+        (, uint256 numOptions, uint256 creditMode, uint256 credits) =
+            abi.decode(_data, (uint256, uint256, uint256, uint256));
+
+        fee = interfold.getE3Quote(_buildRequestParams(startDate, endDate, numOptions, creditMode, credits));
+    }
+
+    /// @notice Builds the Interfold request for a proposal's parameters.
+    /// @dev Shared by `createProposal` and `quoteFee` so a quote can never drift from the fee
+    /// creation actually charges — a second copy of this encoding would be a silent way for the
+    /// two to disagree.
+    /// @param _startDate The validated proposal start date.
+    /// @param _endDate The validated proposal end date.
+    /// @param _numOptions The number of ballot options.
+    /// @param _creditMode The `ICRISP.CreditMode` to run the round under.
+    /// @param _credits The credits allocated per voter.
+    function _buildRequestParams(
+        uint64 _startDate,
+        uint64 _endDate,
+        uint256 _numOptions,
+        uint256 _creditMode,
+        uint256 _credits
+    ) internal view returns (IInterfold.E3RequestParams memory) {
+        if (_numOptions < 2) {
+            revert InvalidOptionCount(_numOptions);
+        }
+
+        /// @notice The exact tuple `CRISPProgram.validate` decodes — all six fields are
+        /// required, and it reverts on a short encoding.
+        /// The census is always TOKEN: the electorate is whoever holds `votingToken` at the
+        /// snapshot, which the coordinator enumerates. BY_REQUESTER would need this plugin to
+        /// expose `getCensus(uint256) returns (address[])` — it has no membership roster to
+        /// answer that with.
+        bytes memory customParams = abi.encode(
+            address(votingToken),
+            votingSettings.minProposerVotingPower,
+            _numOptions,
+            ICRISP.CreditMode(_creditMode),
+            _credits,
+            ICRISP.CensusMode.TOKEN
+        );
+
+        return IInterfold.E3RequestParams({
+            committeeSize: committeeSize,
+            inputWindow: [uint256(_startDate), uint256(_endDate)],
+            e3Program: IE3Program(crispProgramAddress),
+            computeProviderParams: computeProviderParams,
+            customParams: customParams,
+            paramSet: paramSet
+        });
+    }
+
     /// @notice Validates and returns the proposal vote dates, enforcing the minimum duration.
     /// @param _start The start date of the proposal vote. If 0, the current timestamp is used
     /// and the vote starts immediately.
@@ -511,6 +548,26 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
             return tokenDecimals > 1 ? 10 ** (uint256(tokenDecimals) - 1) : 1;
         } catch {
             return 1;
+        }
+    }
+
+    /// @notice The current timepoint in the voting token's ERC-6372 clock units.
+    /// @dev `snapshotBlock` is fed straight to `getPastVotes` / `getPastTotalSupply`, so it MUST be
+    /// expressed in whatever clock the token keeps its checkpoints in. This previously recorded
+    /// `block.number - 1`, which is only correct for the OZ default clock. Against a token with
+    /// `CLOCK_MODE=timestamp` a block number is a timepoint decades in the past: the lookup does
+    /// not revert, it returns 0 — so every holder reads as having no voting power, the whole DAO
+    /// looks ineligible, and `_canExecute` bails on `_totalVotingPower == 0`, making every proposal
+    /// permanently unexecutable.
+    ///
+    /// Tokens predating ERC-6372 have no `clock()`; the setup also accepts bare IVotes tokens. Both
+    /// fall back to `block.number`, which is what OZ's own default `clock()` returns.
+    /// @return The current timepoint, in the token's clock units.
+    function _tokenClock() internal view returns (uint256) {
+        try IERC6372Upgradeable(address(votingToken)).clock() returns (uint48 timepoint) {
+            return timepoint;
+        } catch {
+            return block.number;
         }
     }
 
