@@ -162,10 +162,7 @@ interface ICrispVoting {
     /// @param _data The same ABI-encoded `(allowFailureMap, numOptions, creditMode, credits)` that
     /// would be passed to `createProposal`.
     /// @return fee The E3 fee, denominated in the Interfold fee token.
-    function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data)
-        external
-        view
-        returns (uint256 fee);
+    function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data) external view returns (uint256 fee);
 
     /// @notice Returns the minimum voting power needed to propose a vote.
     /// @return The minimum voting power needed to propose a vote.

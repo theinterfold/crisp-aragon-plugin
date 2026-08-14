@@ -371,11 +371,7 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     }
 
     /// @inheritdoc ICrispVoting
-    function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data)
-        external
-        view
-        returns (uint256 fee)
-    {
+    function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data) external view returns (uint256 fee) {
         (uint64 startDate, uint64 endDate) = _validateProposalDates(_startDate, _endDate);
         (, uint256 numOptions, uint256 creditMode, uint256 credits) =
             abi.decode(_data, (uint256, uint256, uint256, uint256));
