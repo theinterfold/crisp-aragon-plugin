@@ -152,6 +152,7 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
 
             // calculate the E3 fee
             uint256 fee = interfold.getE3Quote(requestParams);
+            requestParams.maxFee = fee;
             // Debit the recorded payer's escrowed credit. Pulling from `_msgSender()` would be
             // wrong under the SPP, where the caller is the SPP contract rather than the creator.
             _chargeFee(proposalId, fee);
@@ -399,28 +400,35 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
             revert InvalidOptionCount(_numOptions);
         }
 
-        /// @notice The exact tuple `CRISPProgram.validate` decodes — all six fields are
+        /// @notice The exact tuple `CRISPProgram.validate` decodes — all seven fields are
         /// required, and it reverts on a short encoding.
         /// The census is always TOKEN: the electorate is whoever holds `votingToken` at the
         /// snapshot, which the coordinator enumerates. BY_REQUESTER would need this plugin to
         /// expose `getCensus(uint256) returns (address[])` — it has no membership roster to
         /// answer that with.
+        ///
+        /// A zero `votingPowerDivisor` asks CRISPProgram to derive the divisor from the voting
+        /// token's decimals. This keeps the on-chain vote scaling aligned with the CRISP SDK.
         bytes memory customParams = abi.encode(
             address(votingToken),
             votingSettings.minProposerVotingPower,
             _numOptions,
             ICRISP.CreditMode(_creditMode),
             _credits,
-            ICRISP.CensusMode.TOKEN
+            ICRISP.CensusMode.TOKEN,
+            uint256(0)
         );
 
         return IInterfold.E3RequestParams({
             committeeSize: committeeSize,
             inputWindow: [uint256(_startDate), uint256(_endDate)],
             e3Program: IE3Program(crispProgramAddress),
+            paramSet: paramSet,
             computeProviderParams: computeProviderParams,
             customParams: customParams,
-            paramSet: paramSet
+            expectedFeeToken: interfold.feeToken(),
+            expectedCryptoConfigId: interfold.activeCryptoConfigId(),
+            maxFee: type(uint256).max
         });
     }
 
