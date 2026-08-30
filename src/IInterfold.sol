@@ -204,6 +204,9 @@ interface IInterfold {
     /// @param paramSet The BFV encryption parameter set to use.
     /// @param computeProviderParams The ABI encoded compute provider parameters.
     /// @param customParams Arbitrary ABI-encoded application-defined parameters.
+    /// @param expectedFeeToken Fee token accepted by the requester.
+    /// @param expectedCryptoConfigId Circuit configuration accepted by the requester.
+    /// @param maxFee Maximum fee accepted for this request.
     struct E3RequestParams {
         CommitteeSize committeeSize;
         uint256[2] inputWindow;
@@ -211,6 +214,9 @@ interface IInterfold {
         uint8 paramSet;
         bytes computeProviderParams;
         bytes customParams;
+        IERC20 expectedFeeToken;
+        bytes32 expectedCryptoConfigId;
+        uint256 maxFee;
     }
 
     ////////////////////////////////////////////////////////////
@@ -329,6 +335,9 @@ interface IInterfold {
 
     /// @notice Returns the ERC20 token used to pay for E3 fees.
     function feeToken() external view returns (IERC20);
+
+    /// @notice Returns the active circuit configuration ID.
+    function activeCryptoConfigId() external view returns (bytes32);
 
     /// @notice Returns the BondingRegistry contract.
     function bondingRegistry() external view returns (IBondingRegistry);

@@ -81,6 +81,10 @@ contract MockInterfold {
         return feeTokenAddr;
     }
 
+    function activeCryptoConfigId() external pure returns (bytes32) {
+        return keccak256("mock-crypto-config");
+    }
+
     /// @dev Priced off the request so a quote that was built from different parameters than the
     /// request produces a different number. A flat price would let `quoteFee` and `createProposal`
     /// disagree about the window or the ballot and still look identical in tests.
