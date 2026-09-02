@@ -49,4 +49,24 @@ contract MyPluginTest is TestBase {
         // It Should return the right values
         assertEq(address(plugin.dao()), address(dao));
     }
+
+    function test_WhenCallingCrispProgram() external view {
+        assertEq(plugin.crispProgram(), 0x0b75A4d93c686103a903091a91C869aD9ad9CB7B);
+    }
+
+    function test_CrispProgramGetterPreservesTheOriginalInterfaceId() external view {
+        bytes4 legacyId = CrispVoting.initialize.selector ^ CrispVoting.minProposerVotingPower.selector
+            ^ CrispVoting.totalVotingPower.selector ^ CrispVoting.getVotingToken.selector
+            ^ CrispVoting.minParticipation.selector ^ CrispVoting.minDuration.selector
+            ^ CrispVoting.getProposal.selector;
+
+        assertTrue(plugin.supportsInterface(legacyId));
+        assertTrue(plugin.supportsInterface(legacyId ^ CrispVoting.crispProgram.selector));
+        assertTrue(
+            plugin.supportsInterface(
+                legacyId ^ CrispVoting.crispProgram.selector ^ CrispVoting.createProposalWithDuration.selector
+                    ^ CrispVoting.quoteFeeForDuration.selector
+            )
+        );
+    }
 }

@@ -12,6 +12,12 @@ import {IInterfold} from "../src/IInterfold.sol";
 import {CrispVotingSetup} from "../src/setup/CrispVotingSetup.sol";
 
 library Utils {
+    error MainnetRequiresSecureParams(uint8 actual);
+    error MainnetRequiresSmallCommittee(IInterfold.CommitteeSize actual);
+    error MainnetDurationTooShort(uint64 actual, uint64 minimum);
+
+    uint64 internal constant MAINNET_MINIMUM_DURATION = 5 days;
+
     // the canonical hevm cheat‑code address
     Vm public constant VM = Vm(address(bytes20(uint160(uint256(keccak256("hevm cheat code"))))));
 
@@ -40,6 +46,19 @@ library Utils {
         crispEnvVariables.committeeSize = IInterfold.CommitteeSize(uint8(VM.envUint("COMMITTEE_SIZE")));
         crispEnvVariables.computeProviderParams = VM.envBytes("COMPUTE_PROVIDER_PARAMS");
         crispEnvVariables.paramSet = uint8(VM.envUint("PARAM_SET"));
+        validateDeploymentPolicy(block.chainid, crispEnvVariables);
+    }
+
+    /// @notice Prevents a production deployment from silently using test cryptography or policy.
+    function validateDeploymentPolicy(uint256 chainId, CrispEnvVariables memory config) internal pure {
+        if (chainId != 1) return;
+        if (config.paramSet != 1) revert MainnetRequiresSecureParams(config.paramSet);
+        if (config.committeeSize != IInterfold.CommitteeSize.Small) {
+            revert MainnetRequiresSmallCommittee(config.committeeSize);
+        }
+        if (config.votingSettings.minDuration < MAINNET_MINIMUM_DURATION) {
+            revert MainnetDurationTooShort(config.votingSettings.minDuration, MAINNET_MINIMUM_DURATION);
+        }
     }
 
     function getGovernanceTokenAndMintSettings()

@@ -147,6 +147,21 @@ interface ICrispVoting {
         uint256 e3Id;
     }
 
+    /// @notice Creates a proposal whose input window starts in the mined block.
+    /// @dev The contract derives the end from `block.timestamp + _duration`. This avoids a
+    /// caller-provided absolute end losing time while the transaction waits to be mined.
+    /// @param _metadata The proposal metadata URI.
+    /// @param _actions The actions to execute if the proposal passes.
+    /// @param _duration The complete proposal input-window duration in seconds.
+    /// @param _data The ABI-encoded `(allowFailureMap, numOptions, creditMode, credits)` values.
+    /// @return proposalId The new proposal ID.
+    function createProposalWithDuration(
+        bytes memory _metadata,
+        Action[] memory _actions,
+        uint64 _duration,
+        bytes memory _data
+    ) external returns (uint256 proposalId);
+
     /// @notice Quotes the Interfold E3 fee a proposal with these parameters would cost.
     /// @dev Takes the same dates and encoded data as `createProposal` and runs them through the
     /// same request construction, so a caller can escrow exactly the right credit before creating
@@ -163,6 +178,12 @@ interface ICrispVoting {
     /// would be passed to `createProposal`.
     /// @return fee The E3 fee, denominated in the Interfold fee token.
     function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data) external view returns (uint256 fee);
+
+    /// @notice Quotes a proposal that starts when its transaction is mined.
+    /// @param _duration The complete proposal input-window duration in seconds.
+    /// @param _data The same ABI-encoded data passed to {createProposalWithDuration}.
+    /// @return fee The E3 fee, denominated in the Interfold fee token.
+    function quoteFeeForDuration(uint64 _duration, bytes calldata _data) external view returns (uint256 fee);
 
     /// @notice Returns the minimum voting power needed to propose a vote.
     /// @return The minimum voting power needed to propose a vote.
@@ -184,6 +205,10 @@ interface ICrispVoting {
     /// @notice Returns the minimum duration of the vote.
     /// @return The minimum duration of the vote.
     function minDuration() external view returns (uint64);
+
+    /// @notice Returns the CRISP program used for new E3 requests.
+    /// @return The configured CRISP program address.
+    function crispProgram() external view returns (address);
 
     /// @notice Updates the voting settings. Requires the `MANAGER_PERMISSION`.
     /// @param _votingSettings The new voting settings.
