@@ -21,12 +21,20 @@ interface ICRISP {
         CUSTOM
     }
 
-    /// @notice Where the eligible voter set for a round comes from. Mirrors CRISPProgram.CensusMode
-    /// — the program range-checks this value and stores it, so the ordering must match exactly.
+    /// @notice How the eligible voter set for a round is determined. Mirrors
+    /// CRISPProgram.CensusMode — the program range-checks this value and stores it, so the
+    /// ordering must match exactly.
     enum CensusMode {
-        /// @notice Derived from token balances by the coordinator.
+        /// @notice The coordinator derives the electorate from holders of the voting token.
         TOKEN,
         /// @notice Supplied by the requester via `getCensus(uint256 e3Id) returns (address[])`.
-        BY_REQUESTER
+        /// For electorates that are not a token balance — a subset of players, a jury — and
+        /// therefore cannot be discovered.
+        BY_REQUESTER,
+        /// @notice No census at all. `CRISPProgram.publishInput` reads each voter's power
+        /// straight from the token at the round's snapshot and hands it to the circuit, so
+        /// nothing has to build or publish a Merkle tree. This is what removes the coordinator
+        /// from the eligibility path.
+        ONCHAIN
     }
 }

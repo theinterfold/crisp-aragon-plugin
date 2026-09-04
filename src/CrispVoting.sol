@@ -152,6 +152,9 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
 
             // calculate the E3 fee
             uint256 fee = interfold.getE3Quote(requestParams);
+            // Tighten the limit to exactly what was quoted, charged and approved below: left
+            // unbounded, `request` re-quotes internally and a price move between the two would
+            // be paid silently.
             requestParams.maxFee = fee;
             // Debit the recorded payer's escrowed credit. Pulling from `_msgSender()` would be
             // wrong under the SPP, where the caller is the SPP contract rather than the creator.
@@ -402,20 +405,32 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
 
         /// @notice The exact tuple `CRISPProgram.validate` decodes — all seven fields are
         /// required, and it reverts on a short encoding.
-        /// The census is always TOKEN: the electorate is whoever holds `votingToken` at the
-        /// snapshot, which the coordinator enumerates. BY_REQUESTER would need this plugin to
-        /// expose `getCensus(uint256) returns (address[])` — it has no membership roster to
-        /// answer that with.
+        ///
+        /// ONCHAIN census: eligibility and weight are read from the token by the CRISP program
+        /// itself at the round's snapshot, so nothing builds or publishes a census and the
+        /// coordinator is out of the eligibility path entirely. TOKEN would put it back in by
+        /// having it enumerate holders; BY_REQUESTER would need this plugin to expose
+        /// `getCensus(uint256) returns (address[])`, and it has no membership roster to answer
+        /// that with.
         ///
         /// A zero `votingPowerDivisor` asks CRISPProgram to derive the divisor from the voting
-        /// token's decimals. This keeps the on-chain vote scaling aligned with the CRISP SDK.
+        /// token's decimals — the same rule `_voteScale()` applies when reading tallies back.
+        // The floor is raised to at least one ballot unit: `CRISPProgram.validate` rejects a
+        // CUSTOM-credit ONCHAIN round whose floor is worth less than the divisor
+        // (MinVotingPowerBelowScale), because a voter could clear the floor and still scale to
+        // zero weight. Without this, a DAO that configures no floor could never create a
+        // proposal at all.
+        uint256 minVotingPower = votingSettings.minProposerVotingPower;
+        uint256 ballotUnit = _voteScale();
+        if (minVotingPower < ballotUnit) minVotingPower = ballotUnit;
+
         bytes memory customParams = abi.encode(
             address(votingToken),
-            votingSettings.minProposerVotingPower,
+            minVotingPower,
             _numOptions,
             ICRISP.CreditMode(_creditMode),
             _credits,
-            ICRISP.CensusMode.TOKEN,
+            ICRISP.CensusMode.ONCHAIN,
             uint256(0)
         );
 
@@ -426,8 +441,14 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
             paramSet: paramSet,
             computeProviderParams: computeProviderParams,
             customParams: customParams,
-            expectedFeeToken: interfold.feeToken(),
+            // The token this plugin escrows and approves, not whatever `feeToken()` returns at
+            // call time: a fee-token swap on the protocol then fails the request instead of
+            // spending an asset the plugin never reserved.
+            expectedFeeToken: interfoldFeeToken,
+            // Read live so a circuit-config change does not block proposals.
             expectedCryptoConfigId: interfold.activeCryptoConfigId(),
+            // Unbounded here because this also feeds the fee quote, where nothing is charged.
+            // `createProposal` tightens it to the quoted fee before requesting.
             maxFee: type(uint256).max
         });
     }

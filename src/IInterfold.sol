@@ -207,6 +207,13 @@ interface IInterfold {
     /// @param expectedFeeToken Fee token accepted by the requester.
     /// @param expectedCryptoConfigId Circuit configuration accepted by the requester.
     /// @param maxFee Maximum fee accepted for this request.
+    /// @dev The last three are caller-supplied assertions, checked by `validateQuoteLimit` inside
+    /// `request` (not `getE3Quote`), so a fee-token swap, a circuit-config change or a price move
+    /// between quoting and requesting cannot silently bind the requester.
+    ///
+    /// This struct must match the deployed Interfold exactly. It is part of the function selector,
+    /// so a missing or extra field does not degrade gracefully — every `getE3Quote` and `request`
+    /// call reverts with *empty* data, which is indistinguishable from calling a wrong address.
     struct E3RequestParams {
         CommitteeSize committeeSize;
         uint256[2] inputWindow;
