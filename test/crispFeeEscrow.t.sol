@@ -210,6 +210,31 @@ contract CrispFeeEscrowTest is Test {
         return plugin.quoteFee(_start(), _end(), _data());
     }
 
+    function test_durationBasedProposalUsesTheMinedBlockTimestamp() public {
+        uint64 duration = 3600;
+        uint256 fee = plugin.quoteFeeForDuration(duration, _data());
+        votingToken.setVotes(alice, 1);
+        _fund(alice, fee);
+
+        vm.prank(alice);
+        uint256 proposalId =
+            plugin.createProposalWithDuration(bytes("ipfs://duration"), new Action[](0), duration, _data());
+
+        ICrispVoting.Proposal memory proposal = plugin.getProposal(proposalId);
+        assertEq(proposal.parameters.startDate, uint64(block.timestamp));
+        assertEq(proposal.parameters.endDate, uint64(block.timestamp) + duration);
+        assertEq(feeToken.balanceOf(address(interfold)), fee);
+    }
+
+    function test_durationBasedProposalRejectsThePluginMinimum() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ICrispVoting.DateOutOfBounds.selector, uint64(block.timestamp) + 60, uint64(block.timestamp) + 59
+            )
+        );
+        plugin.quoteFeeForDuration(59, _data());
+    }
+
     // --- escrow basics ---
 
     function test_depositAndWithdraw() public {

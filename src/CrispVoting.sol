@@ -40,10 +40,18 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     /// @notice The denominator for ratio calculations.
     uint256 internal constant RATIO_BASE = 100;
 
-    /// @notice The interface id for the Crisp Voting plugin
+    /// @notice The original interface ID for the Crisp Voting plugin.
+    /// @dev Keep this ID stable so existing integrations continue to recognize the plugin.
     bytes4 internal constant CRISP_VOTING_INTERFACE_ID = this.initialize.selector ^ this.minProposerVotingPower.selector
         ^ this.totalVotingPower.selector ^ this.getVotingToken.selector ^ this.minParticipation.selector
         ^ this.minDuration.selector ^ this.getProposal.selector;
+
+    /// @notice The interface ID that includes the CRISP program getter.
+    bytes4 internal constant CRISP_VOTING_TIMING_INTERFACE_ID = CRISP_VOTING_INTERFACE_ID ^ this.crispProgram.selector;
+
+    /// @notice The interface ID for the getter and duration-based proposal methods.
+    bytes4 internal constant CRISP_VOTING_DURATION_INTERFACE_ID =
+        CRISP_VOTING_TIMING_INTERFACE_ID ^ this.createProposalWithDuration.selector ^ this.quoteFeeForDuration.selector;
 
     /// @notice The interfold contract reference
     IInterfold public interfold;
@@ -119,6 +127,29 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
         uint64 _endDate,
         bytes memory _data
     ) external returns (uint256 proposalId) {
+        return _createProposal(_metadata, _actions, _startDate, _endDate, _data);
+    }
+
+    /// @inheritdoc ICrispVoting
+    function createProposalWithDuration(
+        bytes memory _metadata,
+        Action[] memory _actions,
+        uint64 _duration,
+        bytes memory _data
+    ) external returns (uint256 proposalId) {
+        uint64 startDate = uint64(block.timestamp);
+        uint64 endDate = startDate + _duration;
+        return _createProposal(_metadata, _actions, startDate, endDate, _data);
+    }
+
+    /// @notice Creates a proposal after its dates have been supplied or derived on chain.
+    function _createProposal(
+        bytes memory _metadata,
+        Action[] memory _actions,
+        uint64 _startDate,
+        uint64 _endDate,
+        bytes memory _data
+    ) internal returns (uint256 proposalId) {
         /// @notice Create a deterministic proposal id
         proposalId = _createProposalId(keccak256(abi.encode(_actions, _metadata)));
 
@@ -275,7 +306,8 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
         override(PluginUUPSUpgradeable, ProposalUpgradeable)
         returns (bool)
     {
-        return _interfaceId == CRISP_VOTING_INTERFACE_ID || super.supportsInterface(_interfaceId);
+        return _interfaceId == CRISP_VOTING_INTERFACE_ID || _interfaceId == CRISP_VOTING_TIMING_INTERFACE_ID
+            || _interfaceId == CRISP_VOTING_DURATION_INTERFACE_ID || super.supportsInterface(_interfaceId);
     }
 
     /// @inheritdoc ICrispVoting
@@ -291,6 +323,11 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     /// @inheritdoc ICrispVoting
     function minDuration() public view returns (uint64) {
         return votingSettings.minDuration;
+    }
+
+    /// @inheritdoc ICrispVoting
+    function crispProgram() public view returns (address) {
+        return crispProgramAddress;
     }
 
     /// @inheritdoc ICrispVoting
@@ -377,10 +414,23 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     /// @inheritdoc ICrispVoting
     function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data) external view returns (uint256 fee) {
         (uint64 startDate, uint64 endDate) = _validateProposalDates(_startDate, _endDate);
+        return _quoteFee(startDate, endDate, _data);
+    }
+
+    /// @inheritdoc ICrispVoting
+    function quoteFeeForDuration(uint64 _duration, bytes calldata _data) external view returns (uint256 fee) {
+        uint64 startDate = uint64(block.timestamp);
+        uint64 endDate = startDate + _duration;
+        (startDate, endDate) = _validateProposalDates(startDate, endDate);
+        return _quoteFee(startDate, endDate, _data);
+    }
+
+    /// @notice Quotes a proposal after its dates have been validated.
+    function _quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data) internal view returns (uint256 fee) {
         (, uint256 numOptions, uint256 creditMode, uint256 credits) =
             abi.decode(_data, (uint256, uint256, uint256, uint256));
 
-        fee = interfold.getE3Quote(_buildRequestParams(startDate, endDate, numOptions, creditMode, credits));
+        fee = interfold.getE3Quote(_buildRequestParams(_startDate, _endDate, numOptions, creditMode, credits));
     }
 
     /// @notice Builds the Interfold request for a proposal's parameters.
