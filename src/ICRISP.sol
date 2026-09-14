@@ -8,6 +8,12 @@ pragma solidity >=0.8.27;
 
 /// @title ICRISP
 interface ICRISP {
+    /// @notice Earliest voting start under the current committee timeouts.
+    function earliestVotingStart() external view returns (uint256);
+
+    /// @notice Time reserved after ballots close for availability finalization.
+    function availabilityFinalizationWindow() external view returns (uint256);
+
     /// @notice Decode the tally for a given e3Id
     /// @param e3Id The identifier for the e3 instance
     /// @return The decoded tally results as an array of uint256

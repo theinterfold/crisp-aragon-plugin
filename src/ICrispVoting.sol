@@ -147,12 +147,12 @@ interface ICrispVoting {
         uint256 e3Id;
     }
 
-    /// @notice Creates a proposal whose input window starts in the mined block.
-    /// @dev The contract derives the end from `block.timestamp + _duration`. This avoids a
-    /// caller-provided absolute end losing time while the transaction waits to be mined.
+    /// @notice Creates a proposal whose vote starts after the full committee timeout budget.
+    /// @dev The contract derives both vote dates in the mined block. A key published early does
+    /// not move the vote forward.
     /// @param _metadata The proposal metadata URI.
     /// @param _actions The actions to execute if the proposal passes.
-    /// @param _duration The complete proposal input-window duration in seconds.
+    /// @param _duration The voting duration in seconds, excluding availability finalization.
     /// @param _data The ABI-encoded `(allowFailureMap, numOptions, creditMode, credits)` values.
     /// @return proposalId The new proposal ID.
     function createProposalWithDuration(
@@ -168,19 +168,17 @@ interface ICrispVoting {
     /// rather than discovering the price from a reverted transaction. Reverts identically to
     /// `createProposal` on invalid dates or option counts.
     ///
-    /// The quote is only as stable as its inputs: passing `0` for a date normalises it to
-    /// `block.timestamp`, so the window — and therefore the fee — shifts between the quote and the
-    /// transaction that uses it. Pass explicit dates for a figure that will still hold when the
-    /// proposal is created.
-    /// @param _startDate The proposal start date, or 0 for `block.timestamp`.
+    /// The quote is only as stable as its inputs: passing `0` for a date uses the current earliest
+    /// voting start, which moves with the next block. Pass explicit dates for a fixed schedule.
+    /// @param _startDate The voting start date, or 0 for the earliest allowed start.
     /// @param _endDate The proposal end date, or 0 for the earliest date `minDuration` allows.
     /// @param _data The same ABI-encoded `(allowFailureMap, numOptions, creditMode, credits)` that
     /// would be passed to `createProposal`.
     /// @return fee The E3 fee, denominated in the Interfold fee token.
     function quoteFee(uint64 _startDate, uint64 _endDate, bytes calldata _data) external view returns (uint256 fee);
 
-    /// @notice Quotes a proposal that starts when its transaction is mined.
-    /// @param _duration The complete proposal input-window duration in seconds.
+    /// @notice Quotes a proposal whose vote starts after the full committee timeout budget.
+    /// @param _duration The voting duration in seconds, excluding availability finalization.
     /// @param _data The same ABI-encoded data passed to {createProposalWithDuration}.
     /// @return fee The E3 fee, denominated in the Interfold fee token.
     function quoteFeeForDuration(uint64 _duration, bytes calldata _data) external view returns (uint256 fee);
