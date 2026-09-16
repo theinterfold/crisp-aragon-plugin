@@ -31,9 +31,9 @@ Read more about CRISP and Interfold [here](https://interfold.com) and [here](htt
 - CRISP_PROGRAM_PARAMS: Encoded parameters for the CRISP program 
 - COMPUTE_PROVIDER_PARAMS: Encoded parameters for the compute provider
 
-`MINIMUM_DURATION` is the complete proposal input window. It includes committee selection, DKG,
-encrypted voting, and the final data-availability period. It is not only the visible voting time.
-The Interfold DAO mainnet launch uses these values:
+`MINIMUM_DURATION` is the minimum time during which voters can submit encrypted ballots.
+Committee selection and DKG happen before this period. Data-availability finalization happens
+after it. The Interfold DAO mainnet launch uses these values:
 
 ```env
 MINIMUM_DURATION="432000"
@@ -41,12 +41,13 @@ COMMITTEE_SIZE="2"
 PARAM_SET="1"
 ```
 
-These values select a five-day proposal, the 19-member Small committee, and secure-8192 BFV
+These values select a five-day voting period, the 19-member Small committee, and secure-8192 BFV
 parameters. Do not use `PARAM_SET="0"` on mainnet.
 
-The frontend should call `createProposalWithDuration`. The plugin derives the start and end from
-the block that mines the transaction, so a pending wallet transaction cannot shorten the selected
-window. `quoteFeeForDuration` quotes the exact same request shape.
+The frontend should call `createProposalWithDuration`. The CRISP program supplies the earliest
+safe voting start. The plugin adds the requested voting duration and reserves the CRISP program's
+availability-finalization window after ballots close. `quoteFeeForDuration` quotes the same
+request shape.
 
 ## Deployment
 
