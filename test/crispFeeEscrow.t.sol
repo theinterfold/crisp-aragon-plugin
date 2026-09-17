@@ -72,6 +72,7 @@ contract MockVotesToken {
 contract MockInterfold {
     address public feeTokenAddr;
     uint256 public quote = 10e6;
+    uint256[2] public lastInputWindow;
 
     constructor(address _feeToken) {
         feeTokenAddr = _feeToken;
@@ -99,7 +100,21 @@ contract MockInterfold {
     /// @dev Must match IInterfold.request exactly — it returns (uint256, E3), not (uint256, bytes).
     function request(IInterfold.E3RequestParams calldata p) external returns (uint256, E3 memory e3) {
         MockFeeToken(feeTokenAddr).transferFrom(msg.sender, address(this), _price(p));
+        lastInputWindow = p.inputWindow;
         return (1, e3);
+    }
+}
+
+contract MockTimingProgram {
+    uint256 public committeeSetupWindow;
+    uint256 public availabilityFinalizationWindow = 30;
+
+    function setCommitteeSetupWindow(uint256 value) external {
+        committeeSetupWindow = value;
+    }
+
+    function earliestVotingStart() external view returns (uint256) {
+        return block.timestamp + committeeSetupWindow;
     }
 }
 
@@ -137,6 +152,7 @@ contract CrispFeeEscrowTest is Test {
     MockFeeToken internal feeToken;
     MockVotesToken internal votingToken;
     MockInterfold internal interfold;
+    MockTimingProgram internal timingProgram;
     CrispVoting internal plugin;
     MockSpp internal spp;
 
@@ -158,6 +174,7 @@ contract CrispFeeEscrowTest is Test {
         feeToken = new MockFeeToken();
         votingToken = new MockVotesToken();
         interfold = new MockInterfold(address(feeToken));
+        timingProgram = new MockTimingProgram();
         spp = new MockSpp();
 
         plugin = CrispVoting(
@@ -171,7 +188,7 @@ contract CrispFeeEscrowTest is Test {
                         interfold: address(interfold),
                         committeeSize: IInterfold.CommitteeSize(0),
                         paramSet: 0,
-                        crispProgramAddress: address(0xC0FFEE),
+                        crispProgramAddress: address(timingProgram),
                         computeProviderParams: bytes(""),
                         votingSettings: ICrispVoting.VotingSettings({
                             minProposerVotingPower: 1, minParticipation: 0, minDuration: 60
@@ -210,8 +227,9 @@ contract CrispFeeEscrowTest is Test {
         return plugin.quoteFee(_start(), _end(), _data());
     }
 
-    function test_durationBasedProposalUsesTheMinedBlockTimestamp() public {
+    function test_durationBasedProposalUsesTheMinedBlockCommitteeDeadline() public {
         uint64 duration = 3600;
+        timingProgram.setCommitteeSetupWindow(300);
         uint256 fee = plugin.quoteFeeForDuration(duration, _data());
         votingToken.setVotes(alice, 1);
         _fund(alice, fee);
@@ -221,8 +239,36 @@ contract CrispFeeEscrowTest is Test {
             plugin.createProposalWithDuration(bytes("ipfs://duration"), new Action[](0), duration, _data());
 
         ICrispVoting.Proposal memory proposal = plugin.getProposal(proposalId);
-        assertEq(proposal.parameters.startDate, uint64(block.timestamp));
-        assertEq(proposal.parameters.endDate, uint64(block.timestamp) + duration);
+        assertEq(proposal.parameters.startDate, uint64(block.timestamp) + 300);
+        assertEq(proposal.parameters.endDate, uint64(block.timestamp) + 300 + duration);
+        assertEq(interfold.lastInputWindow(0), proposal.parameters.startDate);
+        assertEq(interfold.lastInputWindow(1), proposal.parameters.endDate + 30);
+        assertEq(feeToken.balanceOf(address(interfold)), fee);
+    }
+
+    function test_fixedStartRejectsAnIncompleteCommitteeBudget() public {
+        timingProgram.setCommitteeSetupWindow(300);
+        uint64 tooEarly = uint64(block.timestamp) + 299;
+        vm.expectRevert(abi.encodeWithSelector(ICrispVoting.DateOutOfBounds.selector, tooEarly + 1, tooEarly));
+        plugin.quoteFee(tooEarly, tooEarly + 3_600, _data());
+    }
+
+    function test_fixedVotingDatesKeepAvailOutsideProposalEnd() public {
+        timingProgram.setCommitteeSetupWindow(300);
+        uint64 start = uint64(block.timestamp) + 600;
+        uint64 end = start + 3_600;
+        uint256 fee = plugin.quoteFee(start, end, _data());
+        votingToken.setVotes(alice, 1);
+        _fund(alice, fee);
+
+        vm.prank(alice);
+        uint256 proposalId = plugin.createProposal(bytes("ipfs://fixed"), new Action[](0), start, end, _data());
+
+        ICrispVoting.Proposal memory proposal = plugin.getProposal(proposalId);
+        assertEq(proposal.parameters.startDate, start);
+        assertEq(proposal.parameters.endDate, end);
+        assertEq(interfold.lastInputWindow(0), start);
+        assertEq(interfold.lastInputWindow(1), end + 30);
         assertEq(feeToken.balanceOf(address(interfold)), fee);
     }
 

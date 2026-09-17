@@ -115,8 +115,8 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     /// as there will be charges for the E3 request in Interfold.
     /// @param _metadata The metadata of the proposal
     /// @param _actions The actions that will be executed if the proposal passes
-    /// @param _startDate The start date of the proposal
-    /// @param _endDate The end date of the proposal
+    /// @param _startDate The voting start date, or zero for the earliest allowed start.
+    /// @param _endDate The voting end date, before availability finalization.
     /// @param _data The additional abi-encoded data to include more necessary fields
     /// This includes whether to allow failures, and the interfold request start window details
     /// @return proposalId The id of the proposal
@@ -137,7 +137,7 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
         uint64 _duration,
         bytes memory _data
     ) external returns (uint256 proposalId) {
-        uint64 startDate = uint64(block.timestamp);
+        uint64 startDate = uint64(ICRISP(crispProgramAddress).earliestVotingStart());
         uint64 endDate = startDate + _duration;
         return _createProposal(_metadata, _actions, startDate, endDate, _data);
     }
@@ -170,7 +170,8 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
         }
 
         /// @notice Validate and normalise the dates, enforcing the configured minimum duration.
-        /// The validated values feed both the Interfold input window and the stored parameters.
+        /// The validated voting dates are stored on the proposal. Interfold receives a separate
+        /// input-window end that includes the availability finalization period.
         (_startDate, _endDate) = _validateProposalDates(_startDate, _endDate);
 
         {
@@ -419,7 +420,7 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
 
     /// @inheritdoc ICrispVoting
     function quoteFeeForDuration(uint64 _duration, bytes calldata _data) external view returns (uint256 fee) {
-        uint64 startDate = uint64(block.timestamp);
+        uint64 startDate = uint64(ICRISP(crispProgramAddress).earliestVotingStart());
         uint64 endDate = startDate + _duration;
         (startDate, endDate) = _validateProposalDates(startDate, endDate);
         return _quoteFee(startDate, endDate, _data);
@@ -486,7 +487,9 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
 
         return IInterfold.E3RequestParams({
             committeeSize: committeeSize,
-            inputWindow: [uint256(_startDate), uint256(_endDate)],
+            inputWindow: [
+                uint256(_startDate), uint256(_endDate) + ICRISP(crispProgramAddress).availabilityFinalizationWindow()
+            ],
             e3Program: IE3Program(crispProgramAddress),
             paramSet: paramSet,
             computeProviderParams: computeProviderParams,
@@ -504,8 +507,7 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
     }
 
     /// @notice Validates and returns the proposal vote dates, enforcing the minimum duration.
-    /// @param _start The start date of the proposal vote. If 0, the current timestamp is used
-    /// and the vote starts immediately.
+    /// @param _start The start date of the proposal vote. If 0, the earliest start is used.
     /// @param _end The end date of the proposal vote. If 0, `_start + minDuration` is used.
     /// @return startDate The validated start date of the proposal vote.
     /// @return endDate The validated end date of the proposal vote.
@@ -514,17 +516,15 @@ contract CrispVoting is PluginUUPSUpgradeable, ProposalUpgradeable, ICrispVoting
         view
         returns (uint64 startDate, uint64 endDate)
     {
-        // block.timestamp cannot exceed uint64 for ~580 billion years, so the cast is safe.
-        uint64 currentTimestamp = uint64(block.timestamp);
+        uint64 earliestStart = uint64(ICRISP(crispProgramAddress).earliestVotingStart());
 
         if (_start == 0) {
-            startDate = currentTimestamp;
+            startDate = earliestStart;
         } else {
             startDate = _start;
 
-            // the vote cannot start in the past, otherwise the minimum duration is meaningless
-            if (startDate < currentTimestamp) {
-                revert DateOutOfBounds({limit: currentTimestamp, actual: startDate});
+            if (startDate < earliestStart) {
+                revert DateOutOfBounds({limit: earliestStart, actual: startDate});
             }
         }
 

@@ -55,6 +55,10 @@ contract MockInterfoldMinimal {
     }
 }
 
+contract MockCensusTimingProgram {
+    uint256 public availabilityFinalizationWindow;
+}
+
 /// @dev Exposes the encoded request so `customParams` can be decoded and asserted without a live
 ///      coordinator to issue an e3Id.
 contract CrispVotingCensusHarness is CrispVoting {
@@ -103,7 +107,7 @@ contract CrispOnchainCensusTest is Test {
                         interfold: address(interfold),
                         committeeSize: IInterfold.CommitteeSize(0),
                         paramSet: 0,
-                        crispProgramAddress: address(0xC0FFEE),
+                        crispProgramAddress: address(new MockCensusTimingProgram()),
                         computeProviderParams: bytes(""),
                         votingSettings: ICrispVoting.VotingSettings({
                             minProposerVotingPower: minProposerVotingPower, minParticipation: 0, minDuration: 3600
